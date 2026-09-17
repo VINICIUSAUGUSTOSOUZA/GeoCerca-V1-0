@@ -19,12 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Aceitar licencas Android
-        run: yes | sdkmanager --licenses >/dev/null || true
-
-      - name: Instalar SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
       - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
