@@ -40,7 +40,6 @@ public final class ImportParser {
 
             double east;
             double north;
-            // Autoidentificação dos formatos Nome,Este,Norte,Z e Nome,Norte,Este,Z.
             if (Math.abs(n1) > 1000000 && Math.abs(n2) < 1000000) {
                 north = n1;
                 east = n2;
@@ -48,7 +47,7 @@ public final class ImportParser {
                 east = n1;
                 north = n2;
             }
-            out.add(new GeoPoint(name, east, north, z == null ? 0.0 : z, false));
+            out.add(new GeoPoint(name, east, north, z == null ? 0.0 : z, false, 0));
             auto++;
         }
         return out;
@@ -60,14 +59,33 @@ public final class ImportParser {
         String line;
         while ((line = br.readLine()) != null) sb.append(line).append('\n');
 
-        Pattern p = Pattern.compile("<coordinates[^>]*>(.*?)</coordinates>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-        Matcher m = p.matcher(sb.toString());
-        List<GeoPoint> best = new ArrayList<>();
-        while (m.find()) {
-            String[] tokens = m.group(1).trim().split("\\s+");
+        String xml = sb.toString();
+        List<String> coordinateBlocks = new ArrayList<>();
+
+        // Primeiro procura anéis de polígonos, evitando pontos e linhas soltas do KML.
+        Pattern ringPattern = Pattern.compile(
+                "<LinearRing[^>]*>.*?<coordinates[^>]*>(.*?)</coordinates>.*?</LinearRing>",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher ringMatcher = ringPattern.matcher(xml);
+        while (ringMatcher.find()) coordinateBlocks.add(ringMatcher.group(1));
+
+        // Compatibilidade com KMLs simples que trazem apenas <coordinates>.
+        if (coordinateBlocks.isEmpty()) {
+            Pattern coordinatesPattern = Pattern.compile(
+                    "<coordinates[^>]*>(.*?)</coordinates>",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Matcher coordinatesMatcher = coordinatesPattern.matcher(xml);
+            while (coordinatesMatcher.find()) coordinateBlocks.add(coordinatesMatcher.group(1));
+        }
+
+        List<GeoPoint> out = new ArrayList<>();
+        int polygonId = 0;
+        for (String block : coordinateBlocks) {
+            String[] tokens = block.trim().split("\\s+");
             List<GeoPoint> candidate = new ArrayList<>();
-            int i = 1;
+            int vertex = 1;
             GeoPoint first = null;
+
             for (String token : tokens) {
                 String[] c = token.trim().split(",");
                 if (c.length < 2) continue;
@@ -75,15 +93,30 @@ public final class ImportParser {
                 Double lat = toNumber(c[1]);
                 Double alt = c.length >= 3 ? toNumber(c[2]) : 0.0;
                 if (lon == null || lat == null) continue;
-                GeoPoint gp = new GeoPoint(String.format(Locale.US, "V%02d", i++), lon, lat, alt == null ? 0.0 : alt, true);
+
+                GeoPoint gp = new GeoPoint(
+                        String.format(Locale.US, "P%d-V%02d", polygonId + 1, vertex++),
+                        lon,
+                        lat,
+                        alt == null ? 0.0 : alt,
+                        true,
+                        polygonId);
+
                 if (first == null) first = gp;
                 if (first != null && candidate.size() >= 3 && nearlySame(first, gp)) continue;
                 candidate.add(gp);
             }
-            if (candidate.size() > best.size()) best = candidate;
+
+            if (candidate.size() >= 3) {
+                out.addAll(candidate);
+                polygonId++;
+            }
         }
-        if (best.size() < 3) throw new IOException("Nenhum polígono com pelo menos 3 vértices foi encontrado no KML.");
-        return best;
+
+        if (polygonId == 0) {
+            throw new IOException("Nenhum polígono com pelo menos 3 vértices foi encontrado no KML.");
+        }
+        return out;
     }
 
     private static boolean nearlySame(GeoPoint a, GeoPoint b) {
