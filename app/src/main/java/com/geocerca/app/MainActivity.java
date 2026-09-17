@@ -340,6 +340,19 @@ public class MainActivity extends Activity {
         showBreakdown.setChecked(quote.showPriceBreakdown);
         box.addView(showBreakdown);
 
+        section(box, "RESPONSABILIDADE DOS MATERIAIS");
+        RadioGroup materialGroup = new RadioGroup(this);
+        materialGroup.setOrientation(RadioGroup.VERTICAL);
+        RadioButton materialClient = new RadioButton(this);
+        materialClient.setText("Material fornecido pelo cliente");
+        RadioButton materialProvider = new RadioButton(this);
+        materialProvider.setText("Material fornecido pelo prestador de serviços");
+        materialGroup.addView(materialClient);
+        materialGroup.addView(materialProvider);
+        box.addView(materialGroup);
+        if (quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER) materialProvider.setChecked(true);
+        else materialClient.setChecked(true);
+
         section(box, "CONDIÇÕES");
         EditText validity = numberField(box, "Validade do orçamento (dias)", quote.validityDays);
         EditText payment = textField(box, "Forma de pagamento", quote.paymentTerms);
@@ -370,6 +383,8 @@ public class MainActivity extends Activity {
                         quote.extraPricePerStrandPerMeter = Math.max(0,num(extraRate));
                         quote.fixedPrice = Math.max(0,num(fixedPrice));
                         quote.showPriceBreakdown = showBreakdown.isChecked();
+                        quote.materialResponsibility = materialProvider.isChecked()
+                                ? QuoteConfig.MATERIAL_PROVIDER : QuoteConfig.MATERIAL_CLIENT;
                         quote.validityDays = Math.max(1,(int)Math.round(num(validity)));
                         quote.paymentTerms = text(payment);
                         quote.executionTerms = text(execution);
@@ -462,12 +477,11 @@ public class MainActivity extends Activity {
                 "Grampos (com %.1f%% de reserva): %d un.\n"+
                 "Peso estimado: %.2f kg\n"+
                 "Pacotes de %.1f kg: %d un.\n\n"+
-                "%s\n\n"+
-                "Material: fornecimento de responsabilidade do cliente.",
+                "%s\n\n%s",
                 r.perimeterM, config.strands, r.intermediatePosts, r.cornerPosts, r.bracePosts, r.struts,
                 config.wireReservePct, r.wireM, config.wireRollM, r.wireRolls,
                 config.stapleReservePct, r.staples, r.stapleKg, config.staplePackageKg, r.staplePackages,
-                budget);
+                budget, quote.materialResponsibilityText());
     }
 
     private void exportPdf() {
@@ -603,7 +617,7 @@ public class MainActivity extends Activity {
         p.setColor(Color.rgb(245,249,245));
         c.drawRoundRect(new RectF(60,1455,615,1518),10,10,p);
         p.setColor(green); p.setTextSize(17); p.setFakeBoldText(true);
-        c.drawText("Material fornecido pelo cliente.",78,1482,p);
+        c.drawText(quote.materialResponsibilityText(),78,1482,p);
         p.setFakeBoldText(false); p.setColor(Color.DKGRAY); p.setTextSize(15);
         c.drawText("Quantitativos estimados para planejamento e compra.",78,1505,p);
 
@@ -642,7 +656,7 @@ public class MainActivity extends Activity {
         p.setColor(Color.BLACK); p.setTextSize(18);
         c.drawText("• Forma de pagamento: "+safe(quote.paymentTerms,"A combinar"),70,1615,p);
         c.drawText("• Prazo de execução: "+safe(quote.executionTerms,"Conforme alinhamento entre as partes"),70,1645,p);
-        c.drawText("• Todos os materiais necessários à execução do cercamento são de responsabilidade do cliente.",70,1675,p);
+        c.drawText("• "+quote.materialResponsibilityConditionText(),70,1675,p);
         p.setTextSize(15); p.setColor(gray);
         c.drawText("GeoCerca — documento gerado automaticamente a partir do perímetro importado e das configurações do projeto.",60,1725,p);
 
