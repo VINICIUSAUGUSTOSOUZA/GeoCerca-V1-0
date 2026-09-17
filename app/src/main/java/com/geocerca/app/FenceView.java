@@ -10,8 +10,10 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class FenceView extends View {
     public interface PointTapListener { void onPointTapped(int index); }
@@ -71,7 +73,6 @@ public class FenceView extends View {
             return;
         }
 
-        // Pontos disponíveis.
         paint.setTextSize(26); paint.setTextAlign(Paint.Align.LEFT);
         for (int i = 0; i < allPoints.size(); i++) {
             GeoPoint p = allPoints.get(i);
@@ -85,8 +86,17 @@ public class FenceView extends View {
         if (order.size() < 2) return;
 
         paint.setStrokeWidth(5); paint.setStyle(Paint.Style.STROKE); paint.setColor(Color.rgb(45,45,45));
-        for (int i = 0; i < order.size() - 1; i++) drawSegment(c, allPoints.get(order.get(i)), allPoints.get(order.get(i+1)), true);
-        if (closed && order.size() >= 3) drawSegment(c, allPoints.get(order.get(order.size()-1)), allPoints.get(order.get(0)), true);
+        for (List<Integer> polygonOrder : selectedPolygonOrders()) {
+            for (int i = 0; i < polygonOrder.size() - 1; i++) {
+                drawSegment(c, allPoints.get(polygonOrder.get(i)), allPoints.get(polygonOrder.get(i + 1)), true);
+            }
+            if (closed && polygonOrder.size() >= 3) {
+                drawSegment(c,
+                        allPoints.get(polygonOrder.get(polygonOrder.size() - 1)),
+                        allPoints.get(polygonOrder.get(0)),
+                        true);
+            }
+        }
         paint.setStyle(Paint.Style.FILL);
 
         if (closed && order.size() >= 3) drawCornerStructures(c);
@@ -112,33 +122,38 @@ public class FenceView extends View {
         }
     }
 
-    private List<GeoPoint> selectedPolygon() {
-        List<GeoPoint> polygon = new ArrayList<>();
+    private List<List<Integer>> selectedPolygonOrders() {
+        Map<Integer, List<Integer>> grouped = new LinkedHashMap<>();
         for (int idx : order) {
-            if (idx >= 0 && idx < allPoints.size()) polygon.add(allPoints.get(idx));
+            if (idx < 0 || idx >= allPoints.size()) continue;
+            GeoPoint p = allPoints.get(idx);
+            grouped.computeIfAbsent(p.polygonId, k -> new ArrayList<>()).add(idx);
         }
-        return polygon;
+        return new ArrayList<>(grouped.values());
     }
 
     private void drawCornerStructures(Canvas c) {
-        List<GeoPoint> polygon = selectedPolygon();
-        if (polygon.size() < 3) return;
-
         paint.setStyle(Paint.Style.FILL);
-        for (int pos = 0; pos < polygon.size(); pos++) {
-            // Não desenha reforço em vértices intermediários/alinhados.
-            if (!FenceCalculator.isCorner(polygon, pos)) continue;
+        for (List<Integer> polygonOrder : selectedPolygonOrders()) {
+            if (polygonOrder.size() < 3) continue;
 
-            GeoPoint corner = polygon.get(pos);
-            GeoPoint prev = polygon.get((pos - 1 + polygon.size()) % polygon.size());
-            GeoPoint next = polygon.get((pos + 1) % polygon.size());
-            float cx = px(corner), cy = py(corner);
+            List<GeoPoint> polygon = new ArrayList<>();
+            for (int idx : polygonOrder) polygon.add(allPoints.get(idx));
 
-            paint.setColor(Color.rgb(120,65,20));
-            c.drawRect(new RectF(cx-9,cy-9,cx+9,cy+9),paint); // mourão de canto
+            for (int pos = 0; pos < polygon.size(); pos++) {
+                if (!FenceCalculator.isCorner(polygon, pos)) continue;
 
-            if (config.bracesPerCorner > 0) drawBrace(c, cx, cy, px(prev), py(prev));
-            if (config.bracesPerCorner > 1) drawBrace(c, cx, cy, px(next), py(next));
+                GeoPoint corner = polygon.get(pos);
+                GeoPoint prev = polygon.get((pos - 1 + polygon.size()) % polygon.size());
+                GeoPoint next = polygon.get((pos + 1) % polygon.size());
+                float cx = px(corner), cy = py(corner);
+
+                paint.setColor(Color.rgb(120,65,20));
+                c.drawRect(new RectF(cx-9,cy-9,cx+9,cy+9),paint);
+
+                if (config.bracesPerCorner > 0) drawBrace(c, cx, cy, px(prev), py(prev));
+                if (config.bracesPerCorner > 1) drawBrace(c, cx, cy, px(next), py(next));
+            }
         }
     }
 
