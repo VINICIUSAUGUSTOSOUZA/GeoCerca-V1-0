@@ -4,6 +4,9 @@ public class QuoteConfig {
     public static final int MODE_PER_METER = 0;
     public static final int MODE_FIXED = 1;
 
+    public static final int MATERIAL_CLIENT = 0;
+    public static final int MATERIAL_PROVIDER = 1;
+
     public String clientName = "";
     public String propertyName = "";
     public String location = "";
@@ -17,6 +20,8 @@ public class QuoteConfig {
     public double extraPricePerStrandPerMeter = 2.5;
     public double fixedPrice = 0.0;
     public boolean showPriceBreakdown = true;
+
+    public int materialResponsibility = MATERIAL_CLIENT;
 
     public int validityDays = 15;
     public String paymentTerms = "A combinar";
@@ -34,5 +39,17 @@ public class QuoteConfig {
     public double laborTotal(double fencedMeters, int strands) {
         if (mode == MODE_FIXED) return Math.max(0, fixedPrice);
         return Math.max(0, fencedMeters) * effectiveRatePerMeter(strands);
+    }
+
+    public String materialResponsibilityText() {
+        return materialResponsibility == MATERIAL_PROVIDER
+                ? "Material fornecido pelo prestador de serviços."
+                : "Material fornecido pelo cliente.";
+    }
+
+    public String materialResponsibilityConditionText() {
+        return materialResponsibility == MATERIAL_PROVIDER
+                ? "Todos os materiais necessários à execução do cercamento serão adquiridos e fornecidos pelo prestador de serviços."
+                : "Todos os materiais necessários à execução do cercamento são de responsabilidade do cliente.";
     }
 }
