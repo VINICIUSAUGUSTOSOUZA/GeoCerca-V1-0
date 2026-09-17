@@ -80,9 +80,11 @@ public class MainActivity extends Activity {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         Button importBtn = btn("Importar KML/TXT");
+        Button clearBtn = btn("Apagar tudo");
         Button undoBtn = btn("Desfazer");
         Button closeBtn = btn("Fechar perímetro");
         row1.addView(importBtn, new LinearLayout.LayoutParams(0,-2,1));
+        row1.addView(clearBtn, new LinearLayout.LayoutParams(0,-2,1));
         row1.addView(undoBtn, new LinearLayout.LayoutParams(0,-2,1));
         row1.addView(closeBtn, new LinearLayout.LayoutParams(0,-2,1));
         root.addView(row1);
@@ -127,6 +129,7 @@ public class MainActivity extends Activity {
         root.addView(info, new LinearLayout.LayoutParams(-1,-2));
 
         importBtn.setOnClickListener(v -> importFile());
+        clearBtn.setOnClickListener(v -> clearAll());
         undoBtn.setOnClickListener(v -> undo());
         closeBtn.setOnClickListener(v -> closePolygon());
         configBtn.setOnClickListener(v -> showFenceConfig());
@@ -203,6 +206,27 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
         return name;
+    }
+
+    private void clearAll() {
+        if (points.isEmpty() && order.isEmpty()) {
+            toast("Não há dados para apagar.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Apagar tudo")
+                .setMessage("Deseja apagar todos os pontos e polígonos carregados? Depois você poderá importar outro KML/TXT.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Apagar", (d, w) -> {
+                    points.clear();
+                    order.clear();
+                    closed = false;
+                    sourceName = "Projeto";
+                    pendingPdf = null;
+                    refresh();
+                    toast("Projeto limpo. Importe outro KML/TXT.");
+                })
+                .show();
     }
 
     private void undo() {
