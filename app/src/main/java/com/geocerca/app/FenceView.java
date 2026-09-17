@@ -112,12 +112,26 @@ public class FenceView extends View {
         }
     }
 
+    private List<GeoPoint> selectedPolygon() {
+        List<GeoPoint> polygon = new ArrayList<>();
+        for (int idx : order) {
+            if (idx >= 0 && idx < allPoints.size()) polygon.add(allPoints.get(idx));
+        }
+        return polygon;
+    }
+
     private void drawCornerStructures(Canvas c) {
+        List<GeoPoint> polygon = selectedPolygon();
+        if (polygon.size() < 3) return;
+
         paint.setStyle(Paint.Style.FILL);
-        for (int pos = 0; pos < order.size(); pos++) {
-            GeoPoint corner = allPoints.get(order.get(pos));
-            GeoPoint prev = allPoints.get(order.get((pos - 1 + order.size()) % order.size()));
-            GeoPoint next = allPoints.get(order.get((pos + 1) % order.size()));
+        for (int pos = 0; pos < polygon.size(); pos++) {
+            // Não desenha reforço em vértices intermediários/alinhados.
+            if (!FenceCalculator.isCorner(polygon, pos)) continue;
+
+            GeoPoint corner = polygon.get(pos);
+            GeoPoint prev = polygon.get((pos - 1 + polygon.size()) % polygon.size());
+            GeoPoint next = polygon.get((pos + 1) % polygon.size());
             float cx = px(corner), cy = py(corner);
 
             paint.setColor(Color.rgb(120,65,20));
