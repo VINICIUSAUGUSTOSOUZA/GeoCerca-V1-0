@@ -22,6 +22,7 @@ public class QuoteConfig {
     public boolean showPriceBreakdown = true;
 
     public int materialResponsibility = MATERIAL_CLIENT;
+    public double materialPrice = 0.0;
 
     public int validityDays = 15;
     public String paymentTerms = "A combinar";
@@ -39,6 +40,14 @@ public class QuoteConfig {
     public double laborTotal(double fencedMeters, int strands) {
         if (mode == MODE_FIXED) return Math.max(0, fixedPrice);
         return Math.max(0, fencedMeters) * effectiveRatePerMeter(strands);
+    }
+
+    public double materialTotal() {
+        return materialResponsibility == MATERIAL_PROVIDER ? Math.max(0, materialPrice) : 0.0;
+    }
+
+    public double grandTotal(double fencedMeters, int strands) {
+        return laborTotal(fencedMeters, strands) + materialTotal();
     }
 
     public String materialResponsibilityText() {
