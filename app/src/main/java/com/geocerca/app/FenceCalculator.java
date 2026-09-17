@@ -1,6 +1,9 @@
 package com.geocerca.app;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class FenceCalculator {
     private FenceCalculator() {}
@@ -37,11 +40,6 @@ public final class FenceCalculator {
         return Math.hypot(b.x - a.x, b.y - a.y);
     }
 
-    /**
-     * Retorna true somente quando o vértice representa uma mudança real de
-     * direção da divisa. Um vértice inserido no meio de um alinhamento não é
-     * considerado canto e, portanto, não recebe estrutura de reforço.
-     */
     public static boolean isCorner(List<GeoPoint> polygon, int index) {
         if (polygon == null || polygon.size() < 3 || index < 0 || index >= polygon.size()) return false;
 
@@ -72,25 +70,38 @@ public final class FenceCalculator {
         return new double[]{b.x - a.x, b.y - a.y};
     }
 
-    public static Result calculate(List<GeoPoint> polygon, FenceConfig cfg) {
-        Result r = new Result();
-        if (polygon == null || polygon.size() < 3) return r;
-
-        for (int i = 0; i < polygon.size(); i++) {
-            if (isCorner(polygon, i)) r.cornerPosts++;
+    private static List<List<GeoPoint>> splitPolygons(List<GeoPoint> points) {
+        Map<Integer, List<GeoPoint>> grouped = new LinkedHashMap<>();
+        for (GeoPoint p : points) {
+            grouped.computeIfAbsent(p.polygonId, k -> new ArrayList<>()).add(p);
         }
+        return new ArrayList<>(grouped.values());
+    }
+
+    public static Result calculate(List<GeoPoint> points, FenceConfig cfg) {
+        Result r = new Result();
+        if (points == null || points.size() < 3) return r;
+
+        for (List<GeoPoint> polygon : splitPolygons(points)) {
+            if (polygon.size() < 3) continue;
+
+            for (int i = 0; i < polygon.size(); i++) {
+                if (isCorner(polygon, i)) r.cornerPosts++;
+            }
+
+            for (int i = 0; i < polygon.size(); i++) {
+                GeoPoint a = polygon.get(i);
+                GeoPoint b = polygon.get((i + 1) % polygon.size());
+                double d = distanceM(a, b);
+                r.perimeterM += d;
+
+                int intervals = Math.max(1, (int) Math.ceil(d / Math.max(0.1, cfg.postSpacingM)));
+                r.intermediatePosts += Math.max(0, intervals - 1);
+            }
+        }
+
         r.bracePosts = r.cornerPosts * Math.max(0, cfg.bracesPerCorner);
         r.struts = r.cornerPosts * Math.max(0, cfg.strutsPerCorner);
-
-        for (int i = 0; i < polygon.size(); i++) {
-            GeoPoint a = polygon.get(i);
-            GeoPoint b = polygon.get((i + 1) % polygon.size());
-            double d = distanceM(a, b);
-            r.perimeterM += d;
-
-            int intervals = Math.max(1, (int) Math.ceil(d / Math.max(0.1, cfg.postSpacingM)));
-            r.intermediatePosts += Math.max(0, intervals - 1);
-        }
 
         double baseWire = r.perimeterM * Math.max(1, cfg.strands);
         r.wireM = baseWire * (1.0 + Math.max(0, cfg.wireReservePct) / 100.0);
