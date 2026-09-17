@@ -1,9 +1,11 @@
 package com.geocerca.app;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class FenceCalculator {
     private FenceCalculator() {}
@@ -11,6 +13,11 @@ public final class FenceCalculator {
     // Vértices com desvio menor que este valor são tratados como pontos
     // intermediários da mesma divisa, e não como cantos do lote.
     private static final double CORNER_MIN_DEFLECTION_DEG = 10.0;
+
+    // Tolerância usada para reconhecer o mesmo ponto/divisa vindo de
+    // polígonos vizinhos. Aproximadamente 0,20 m em coordenadas geográficas.
+    private static final double GEO_POINT_TOLERANCE_DEG = 0.000002;
+    private static final double PLANAR_POINT_TOLERANCE_M = 0.20;
 
     public static class Result {
         public double perimeterM;
@@ -78,20 +85,51 @@ public final class FenceCalculator {
         return new ArrayList<>(grouped.values());
     }
 
+    private static String pointKey(GeoPoint p) {
+        double tolerance = p.latLon ? GEO_POINT_TOLERANCE_DEG : PLANAR_POINT_TOLERANCE_M;
+        long qx = Math.round(p.x / tolerance);
+        long qy = Math.round(p.y / tolerance);
+        return (p.latLon ? "G:" : "P:") + qx + ":" + qy;
+    }
+
+    private static String edgeKey(GeoPoint a, GeoPoint b) {
+        String ka = pointKey(a);
+        String kb = pointKey(b);
+        // A-B e B-A representam a mesma cerca física.
+        return ka.compareTo(kb) <= 0 ? ka + "|" + kb : kb + "|" + ka;
+    }
+
     public static Result calculate(List<GeoPoint> points, FenceConfig cfg) {
         Result r = new Result();
         if (points == null || points.size() < 3) return r;
+
+        // Cantos físicos únicos: quando dois lotes compartilham o mesmo canto,
+        // existe um único mourão de canto e um único conjunto de reforço.
+        Set<String> uniqueCornerPoints = new HashSet<>();
+
+        // Segmentos físicos únicos: uma divisa comum entre dois polígonos deve
+        // ser cercada e contabilizada somente uma vez, mesmo aparecendo nos
+        // dois sentidos no KML.
+        Set<String> uniqueEdges = new HashSet<>();
 
         for (List<GeoPoint> polygon : splitPolygons(points)) {
             if (polygon.size() < 3) continue;
 
             for (int i = 0; i < polygon.size(); i++) {
-                if (isCorner(polygon, i)) r.cornerPosts++;
+                if (isCorner(polygon, i)) {
+                    uniqueCornerPoints.add(pointKey(polygon.get(i)));
+                }
             }
 
             for (int i = 0; i < polygon.size(); i++) {
                 GeoPoint a = polygon.get(i);
                 GeoPoint b = polygon.get((i + 1) % polygon.size());
+                String key = edgeKey(a, b);
+
+                // Se a mesma divisa já apareceu em outro polígono, não soma
+                // novamente perímetro, mourões intermediários nem arame.
+                if (!uniqueEdges.add(key)) continue;
+
                 double d = distanceM(a, b);
                 r.perimeterM += d;
 
@@ -100,6 +138,7 @@ public final class FenceCalculator {
             }
         }
 
+        r.cornerPosts = uniqueCornerPoints.size();
         r.bracePosts = r.cornerPosts * Math.max(0, cfg.bracesPerCorner);
         r.struts = r.cornerPosts * Math.max(0, cfg.strutsPerCorner);
 
