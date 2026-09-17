@@ -2,6 +2,11 @@ name: Build GeoCerca Release Assinado
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "feature-multikml-cantos-reais" ]
+    paths:
+      - ".github/workflows/build-release-signed.yml"
+      - "app/**"
 
 jobs:
   build-release:
