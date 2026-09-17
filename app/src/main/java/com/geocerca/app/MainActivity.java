@@ -260,9 +260,13 @@ public class MainActivity extends Activity {
         } else {
             FenceCalculator.Result r = FenceCalculator.calculate(polygon(), config);
             double labor = quote.laborTotal(r.perimeterM, config.strands);
+            double materials = quote.materialTotal();
+            double total = quote.grandTotal(r.perimeterM, config.strands);
+            String extra = quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER
+                    ? "  •  materiais: "+money(materials)+"  •  total: "+money(total) : "";
             info.setText(String.format(Locale.getDefault(),
-                    "Perímetro: %.2f m  •  mourões interm.: %d  •  fiadas: %d  •  mão de obra: %s",
-                    r.perimeterM, r.intermediatePosts, config.strands, money(labor)));
+                    "Perímetro: %.2f m  •  mourões interm.: %d  •  fiadas: %d  •  mão de obra: %s%s",
+                    r.perimeterM, r.intermediatePosts, config.strands, money(labor), extra));
         }
     }
 
@@ -353,19 +357,25 @@ public class MainActivity extends Activity {
         if (quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER) materialProvider.setChecked(true);
         else materialClient.setChecked(true);
 
+        EditText materialPrice = numberField(box, "Valor dos materiais a cobrar (R$)", quote.materialPrice);
+
         section(box, "CONDIÇÕES");
         EditText validity = numberField(box, "Validade do orçamento (dias)", quote.validityDays);
         EditText payment = textField(box, "Forma de pagamento", quote.paymentTerms);
         EditText execution = textField(box, "Prazo / condição de execução", quote.executionTerms);
 
-        Runnable toggle = () -> {
+        Runnable toggleLabor = () -> {
             boolean meter = byMeter.isChecked();
             baseRate.setEnabled(meter);
             extraRate.setEnabled(meter);
             fixedPrice.setEnabled(!meter);
         };
-        modes.setOnCheckedChangeListener((g,id) -> toggle.run());
-        toggle.run();
+        modes.setOnCheckedChangeListener((g,id) -> toggleLabor.run());
+        toggleLabor.run();
+
+        Runnable toggleMaterials = () -> materialPrice.setEnabled(materialProvider.isChecked());
+        materialGroup.setOnCheckedChangeListener((g,id) -> toggleMaterials.run());
+        toggleMaterials.run();
 
         scroll.addView(box);
         new AlertDialog.Builder(this).setTitle("Dados e orçamento")
@@ -385,6 +395,8 @@ public class MainActivity extends Activity {
                         quote.showPriceBreakdown = showBreakdown.isChecked();
                         quote.materialResponsibility = materialProvider.isChecked()
                                 ? QuoteConfig.MATERIAL_PROVIDER : QuoteConfig.MATERIAL_CLIENT;
+                        quote.materialPrice = quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER
+                                ? Math.max(0,num(materialPrice)) : 0.0;
                         quote.validityDays = Math.max(1,(int)Math.round(num(validity)));
                         quote.paymentTerms = text(payment);
                         quote.executionTerms = text(execution);
@@ -457,6 +469,8 @@ public class MainActivity extends Activity {
 
     private String summary(FenceCalculator.Result r) {
         double labor = quote.laborTotal(r.perimeterM, config.strands);
+        double materials = quote.materialTotal();
+        double total = quote.grandTotal(r.perimeterM, config.strands);
         String budget;
         if (quote.mode == QuoteConfig.MODE_FIXED) {
             budget = "Modalidade: valor fechado\nValor da mão de obra: " + money(labor);
@@ -465,6 +479,9 @@ public class MainActivity extends Activity {
                     "Modalidade: por metro linear\nBase até 4 fiadas: %s/m\nFiadas extras: %d\nAdicional por fiada extra: %s/m\nValor final por metro: %s/m\nValor da mão de obra: %s",
                     money(quote.basePricePerMeterUpTo4), quote.extraStrands(config.strands),
                     money(quote.extraPricePerStrandPerMeter), money(quote.effectiveRatePerMeter(config.strands)), money(labor));
+        }
+        if (quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER) {
+            budget += "\nValor dos materiais: " + money(materials) + "\nTOTAL GERAL: " + money(total);
         }
         return String.format(Locale.getDefault(),
                 "Perímetro cercado: %.2f m\nFiadas de arame: %d\n\n"+
@@ -537,6 +554,8 @@ public class MainActivity extends Activity {
     private byte[] buildPdf() throws Exception {
         FenceCalculator.Result r = FenceCalculator.calculate(polygon(),config);
         double labor = quote.laborTotal(r.perimeterM, config.strands);
+        double materials = quote.materialTotal();
+        double total = quote.grandTotal(r.perimeterM, config.strands);
 
         PdfDocument pdf = new PdfDocument();
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -550,16 +569,14 @@ public class MainActivity extends Activity {
         int gray = Color.rgb(90,90,90);
         int line = Color.rgb(210,220,212);
 
-        // Cabeçalho
         p.setColor(green); p.setTextSize(52); p.setFakeBoldText(true);
         c.drawText("GeoCerca",60,72,p);
         p.setTextSize(34);
         c.drawText("ORÇAMENTO DE CERCAMENTO",455,72,p);
         p.setFakeBoldText(false); p.setTextSize(20); p.setColor(gray);
-        c.drawText("Croqui, quantitativos e mão de obra no mesmo documento",455,103,p);
+        c.drawText("Croqui, quantitativos, mão de obra e materiais",455,103,p);
         p.setColor(green); p.setStrokeWidth(4); c.drawLine(60,125,1180,125,p);
 
-        // Dados do projeto
         sectionPdf(c,p,"1  DADOS DO PROJETO",60,165,green);
         p.setTextSize(21); p.setColor(Color.BLACK);
         drawLabelValue(c,p,"Cliente:", safe(quote.clientName,"Não informado"),60,205,250);
@@ -573,7 +590,6 @@ public class MainActivity extends Activity {
         drawLabelValue(c,p,"Data / validade:", today()+" / "+quote.validityDays+" dias",650,304,835);
         p.setColor(line); p.setStrokeWidth(2); c.drawLine(60,330,1180,330,p);
 
-        // Croqui
         sectionPdf(c,p,"2  CROQUI DO CERCAMENTO",60,370,green);
         Bitmap snap = fenceView.snapshot();
         Rect src = new Rect(0,0,snap.getWidth(),snap.getHeight());
@@ -587,7 +603,6 @@ public class MainActivity extends Activity {
                 r.perimeterM,config.strands,config.postSpacingM),620,967,p);
         p.setTextAlign(Paint.Align.LEFT);
 
-        // Materiais à esquerda
         sectionPdf(c,p,"3  LISTA ESTIMADA DE MATERIAIS",60,1030,green);
         float tableX=60, tableY=1060, tableW=555, rowH=39;
         p.setColor(green); c.drawRect(tableX,tableY,tableX+tableW,tableY+rowH,p);
@@ -607,22 +622,25 @@ public class MainActivity extends Activity {
         };
         p.setTextSize(19);
         for (int i=0;i<mats.length;i++) {
-            float y=tableY+rowH*(i+1);
+            float yy=tableY+rowH*(i+1);
             p.setColor(i%2==0 ? Color.rgb(249,251,249) : Color.WHITE);
-            c.drawRect(tableX,y,tableX+tableW,y+rowH,p);
+            c.drawRect(tableX,yy,tableX+tableW,yy+rowH,p);
             p.setColor(Color.BLACK);
-            c.drawText(mats[i][0],tableX+14,y+26,p);
-            c.drawText(mats[i][1],tableX+390,y+26,p);
+            c.drawText(mats[i][0],tableX+14,yy+26,p);
+            c.drawText(mats[i][1],tableX+390,yy+26,p);
         }
         p.setColor(Color.rgb(245,249,245));
         c.drawRoundRect(new RectF(60,1455,615,1518),10,10,p);
         p.setColor(green); p.setTextSize(17); p.setFakeBoldText(true);
         c.drawText(quote.materialResponsibilityText(),78,1482,p);
         p.setFakeBoldText(false); p.setColor(Color.DKGRAY); p.setTextSize(15);
-        c.drawText("Quantitativos estimados para planejamento e compra.",78,1505,p);
+        if (quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER) {
+            c.drawText("Valor dos materiais: "+money(materials),78,1505,p);
+        } else {
+            c.drawText("Quantitativos estimados para planejamento e compra.",78,1505,p);
+        }
 
-        // Orçamento à direita
-        sectionPdf(c,p,"4  ORÇAMENTO DA MÃO DE OBRA",650,1030,green);
+        sectionPdf(c,p,"4  ORÇAMENTO",650,1030,green);
         RectF card = new RectF(650,1060,1180,1518);
         p.setStyle(Paint.Style.FILL); p.setColor(Color.rgb(250,252,250)); c.drawRoundRect(card,14,14,p);
         p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2); p.setColor(green); c.drawRoundRect(card,14,14,p);
@@ -630,27 +648,32 @@ public class MainActivity extends Activity {
 
         float y=1100; p.setTextSize(20); p.setColor(Color.BLACK);
         if (quote.mode == QuoteConfig.MODE_FIXED) {
-            drawQuoteLine(c,p,"Modalidade","Valor fechado",675,y,920); y+=46;
-            drawQuoteLine(c,p,"Metragem considerada",fmt(r.perimeterM)+" m",675,y,920); y+=46;
-        } else if (quote.showPriceBreakdown) {
-            drawQuoteLine(c,p,"Modalidade","Por metro linear",675,y,920); y+=42;
-            drawQuoteLine(c,p,"Base até 4 fiadas",money(quote.basePricePerMeterUpTo4)+" / m",675,y,920); y+=42;
-            drawQuoteLine(c,p,"Fiadas excedentes",String.valueOf(quote.extraStrands(config.strands)),675,y,920); y+=42;
-            drawQuoteLine(c,p,"Adicional / fiada",money(quote.extraPricePerStrandPerMeter)+" / m",675,y,920); y+=42;
-            drawQuoteLine(c,p,"Valor final / metro",money(quote.effectiveRatePerMeter(config.strands))+" / m",675,y,920); y+=42;
+            drawQuoteLine(c,p,"Modalidade","Valor fechado",675,y,920); y+=42;
             drawQuoteLine(c,p,"Metragem considerada",fmt(r.perimeterM)+" m",675,y,920); y+=42;
+        } else if (quote.showPriceBreakdown) {
+            drawQuoteLine(c,p,"Modalidade","Por metro linear",675,y,920); y+=38;
+            drawQuoteLine(c,p,"Base até 4 fiadas",money(quote.basePricePerMeterUpTo4)+" / m",675,y,920); y+=38;
+            drawQuoteLine(c,p,"Fiadas excedentes",String.valueOf(quote.extraStrands(config.strands)),675,y,920); y+=38;
+            drawQuoteLine(c,p,"Adicional / fiada",money(quote.extraPricePerStrandPerMeter)+" / m",675,y,920); y+=38;
+            drawQuoteLine(c,p,"Valor final / metro",money(quote.effectiveRatePerMeter(config.strands))+" / m",675,y,920); y+=38;
+            drawQuoteLine(c,p,"Metragem considerada",fmt(r.perimeterM)+" m",675,y,920); y+=38;
         } else {
-            drawQuoteLine(c,p,"Modalidade","Mão de obra",675,y,920); y+=46;
-            drawQuoteLine(c,p,"Metragem considerada",fmt(r.perimeterM)+" m",675,y,920); y+=46;
+            drawQuoteLine(c,p,"Modalidade","Mão de obra",675,y,920); y+=42;
+            drawQuoteLine(c,p,"Metragem considerada",fmt(r.perimeterM)+" m",675,y,920); y+=42;
         }
 
-        p.setColor(lightGreen); c.drawRoundRect(new RectF(675,1360,1155,1488),12,12,p);
+        drawQuoteLine(c,p,"Mão de obra",money(labor),675,1320,920);
+        if (quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER) {
+            drawQuoteLine(c,p,"Materiais",money(materials),675,1355,920);
+        }
+
+        p.setColor(lightGreen); c.drawRoundRect(new RectF(675,1380,1155,1498),12,12,p);
         p.setColor(green); p.setTextAlign(Paint.Align.CENTER); p.setFakeBoldText(true); p.setTextSize(21);
-        c.drawText("VALOR TOTAL DA MÃO DE OBRA",915,1398,p);
-        p.setTextSize(46); c.drawText(money(labor),915,1462,p);
+        c.drawText(quote.materialResponsibility == QuoteConfig.MATERIAL_PROVIDER
+                ? "VALOR TOTAL DO ORÇAMENTO" : "VALOR TOTAL DA MÃO DE OBRA",915,1417,p);
+        p.setTextSize(44); c.drawText(money(total),915,1475,p);
         p.setFakeBoldText(false); p.setTextAlign(Paint.Align.LEFT);
 
-        // Condições
         p.setColor(line); p.setStrokeWidth(2); c.drawLine(60,1545,1180,1545,p);
         sectionPdf(c,p,"5  CONDIÇÕES",60,1582,green);
         p.setColor(Color.BLACK); p.setTextSize(18);
